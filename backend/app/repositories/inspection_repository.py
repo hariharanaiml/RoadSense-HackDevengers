@@ -12,16 +12,23 @@ class InspectionRepository:
         db: Session,
         image_filename: str,
         detection_count: int,
+        total_estimated_cost: float,
+        overall_severity: str,
+        overall_priority: str,
         detections: List[Dict[str, Any]]
     ) -> Inspection:
         """
-        Atomically creates an Inspection and its associated Detection records.
+        Atomically creates an Inspection and its associated Detection records,
+        including all road intelligence attributes (severity, priority, cost, recommendations).
         Rolls back the transaction if any database error occurs.
         """
         try:
             inspection = Inspection(
                 image_filename=image_filename,
-                detection_count=detection_count
+                detection_count=detection_count,
+                total_estimated_cost=total_estimated_cost,
+                overall_severity=overall_severity,
+                overall_priority=overall_priority
             )
             db.add(inspection)
             db.flush()  # Populates inspection.id for detections
@@ -36,13 +43,21 @@ class InspectionRepository:
                     x1=bbox.get("x1", 0.0),
                     y1=bbox.get("y1", 0.0),
                     x2=bbox.get("x2", 0.0),
-                    y2=bbox.get("y2", 0.0)
+                    y2=bbox.get("y2", 0.0),
+                    severity=item.get("severity", "LOW"),
+                    priority=item.get("priority", "LOW"),
+                    estimated_cost=float(item.get("estimated_cost", 0.0)),
+                    recommended_action=item.get("recommended_action", "")
                 )
                 db.add(detection)
 
             db.commit()
             db.refresh(inspection)
-            logger.info(f"Persisted Inspection ID={inspection.id} with {len(detections)} detections.")
+            logger.info(
+                f"Persisted Inspection ID={inspection.id} | "
+                f"Count={detection_count} | Cost={total_estimated_cost} | "
+                f"Severity={overall_severity} | Priority={overall_priority}"
+            )
             return inspection
         except Exception as e:
             db.rollback()

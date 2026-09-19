@@ -15,6 +15,11 @@ class Inspection(Base):
     image_filename = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=get_utc_now, nullable=False)
     detection_count = Column(Integer, default=0, nullable=False)
+    
+    # Road Intelligence fields
+    total_estimated_cost = Column(Float, default=0.0, nullable=False)
+    overall_severity = Column(String(20), default="NONE", nullable=False)
+    overall_priority = Column(String(20), default="NONE", nullable=False)
 
     detections = relationship(
         "Detection",
@@ -36,5 +41,11 @@ class Detection(Base):
     y1 = Column(Float, nullable=False)
     x2 = Column(Float, nullable=False)
     y2 = Column(Float, nullable=False)
+
+    # Road Intelligence fields
+    severity = Column(String(20), default="LOW", nullable=False)
+    priority = Column(String(20), default="LOW", nullable=False)
+    estimated_cost = Column(Float, default=0.0, nullable=False)
+    recommended_action = Column(String(255), default="", nullable=False)
 
     inspection = relationship("Inspection", back_populates="detections")

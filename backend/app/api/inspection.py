@@ -6,6 +6,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.repositories.inspection_repository import InspectionRepository
+from app.services.road_intelligence import apply_road_intelligence
 from app.services.yolo_service import yolo_service
 
 logger = logging.getLogger("inspection_api")
@@ -14,14 +15,15 @@ router = APIRouter(prefix="/api/inspection", tags=["Inspection"])
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 
-@router.post("/analyze", summary="Analyze Road Damage and Store Inspection")
+@router.post("/analyze", summary="Analyze Road Damage with Intelligence and Store Inspection")
 async def analyze_road_damage(
     image: UploadFile = File(...),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
     Accepts an uploaded image, validates format and integrity using Pillow,
-    runs real YOLO inference, and persists the inspection and detection records to SQLite.
+    runs real YOLO inference, applies Road Intelligence rules (severity, priority,
+    estimated cost, recommended action), and persists everything to SQLite.
     """
     if not image or not image.filename:
         logger.warning("Analyze request rejected: missing filename or file.")
@@ -61,7 +63,6 @@ async def analyze_road_damage(
     try:
         pil_image = Image.open(io.BytesIO(content))
         pil_image.verify()
-        # Re-open after verify() because verify() can leave the file descriptor unusable
         pil_image = Image.open(io.BytesIO(content))
 
         format_name = pil_image.format
@@ -98,8 +99,8 @@ async def analyze_road_damage(
 
     # 5. Run real YOLO inference
     try:
-        detections = yolo_service.predict(pil_image)
-        detection_count = len(detections)
+        raw_detections = yolo_service.predict(pil_image)
+        detection_count = len(raw_detections)
         logger.info(f"YOLO inference successful. Detected {detection_count} damage instances.")
     except Exception as e:
         logger.error(f"Inference execution failed: {e}", exc_info=True)
@@ -108,13 +109,22 @@ async def analyze_road_damage(
             detail="An error occurred during road damage AI inference."
         )
 
-    # 6. Persist Inspection and Detection records into SQLite
+    # 6. Apply Road Intelligence rules (Severity, Priority, Cost, Action)
+    enriched_detections, summary = apply_road_intelligence(raw_detections)
+    total_estimated_cost = summary["total_estimated_cost"]
+    overall_severity = summary["overall_severity"]
+    overall_priority = summary["overall_priority"]
+
+    # 7. Persist Inspection and Detection records into SQLite
     try:
         inspection = InspectionRepository.create_inspection_with_detections(
             db=db,
             image_filename=image.filename,
             detection_count=detection_count,
-            detections=detections
+            total_estimated_cost=total_estimated_cost,
+            overall_severity=overall_severity,
+            overall_priority=overall_priority,
+            detections=enriched_detections
         )
     except Exception as e:
         logger.error(f"Database persistence failure for '{image.filename}': {e}", exc_info=True)
@@ -127,7 +137,10 @@ async def analyze_road_damage(
         "success": True,
         "inspection_id": inspection.id,
         "detection_count": detection_count,
-        "detections": detections
+        "total_estimated_cost": total_estimated_cost,
+        "overall_severity": overall_severity,
+        "overall_priority": overall_priority,
+        "detections": enriched_detections
     }
 
 
@@ -137,7 +150,7 @@ def get_inspection_history(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Returns previously stored inspections sorted newest first.
+    Returns previously stored inspections sorted newest first, including road intelligence metrics.
     """
     inspections = InspectionRepository.get_all(db=db, limit=limit)
     return {
@@ -146,7 +159,10 @@ def get_inspection_history(
                 "id": insp.id,
                 "image_filename": insp.image_filename,
                 "created_at": insp.created_at.isoformat() if insp.created_at else None,
-                "detection_count": insp.detection_count
+                "detection_count": insp.detection_count,
+                "total_estimated_cost": insp.total_estimated_cost,
+                "overall_severity": insp.overall_severity,
+                "overall_priority": insp.overall_priority
             }
             for insp in inspections
         ]
@@ -159,7 +175,7 @@ def get_inspection(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Retrieves a single inspection record and all its associated detections.
+    Retrieves a single inspection record and all its associated detections with Road Intelligence fields.
     Returns 404 if the inspection ID is not found.
     """
     inspection = InspectionRepository.get_by_id(db=db, inspection_id=inspection_id)
@@ -174,6 +190,9 @@ def get_inspection(
         "image_filename": inspection.image_filename,
         "created_at": inspection.created_at.isoformat() if inspection.created_at else None,
         "detection_count": inspection.detection_count,
+        "total_estimated_cost": inspection.total_estimated_cost,
+        "overall_severity": inspection.overall_severity,
+        "overall_priority": inspection.overall_priority,
         "detections": [
             {
                 "class_id": det.class_id,
@@ -184,7 +203,11 @@ def get_inspection(
                     "y1": det.y1,
                     "x2": det.x2,
                     "y2": det.y2
-                }
+                },
+                "severity": det.severity,
+                "priority": det.priority,
+                "estimated_cost": det.estimated_cost,
+                "recommended_action": det.recommended_action
             }
             for det in inspection.detections
         ]
