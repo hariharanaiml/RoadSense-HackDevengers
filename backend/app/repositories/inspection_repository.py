@@ -15,11 +15,14 @@ class InspectionRepository:
         total_estimated_cost: float,
         overall_severity: str,
         overall_priority: str,
-        detections: List[Dict[str, Any]]
+        detections: List[Dict[str, Any]],
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None
     ) -> Inspection:
         """
         Atomically creates an Inspection and its associated Detection records,
-        including all road intelligence attributes (severity, priority, cost, recommendations).
+        including all road intelligence attributes (severity, priority, cost, recommendations)
+        and optional geographic coordinates (latitude, longitude).
         Rolls back the transaction if any database error occurs.
         """
         try:
@@ -28,7 +31,9 @@ class InspectionRepository:
                 detection_count=detection_count,
                 total_estimated_cost=total_estimated_cost,
                 overall_severity=overall_severity,
-                overall_priority=overall_priority
+                overall_priority=overall_priority,
+                latitude=latitude,
+                longitude=longitude
             )
             db.add(inspection)
             db.flush()  # Populates inspection.id for detections

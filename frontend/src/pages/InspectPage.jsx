@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import {
   UploadCloud, X, ScanSearch, CheckCircle2, AlertTriangle,
-  Zap, Image as ImageIcon, AlertCircle
+  Zap, Image as ImageIcon, AlertCircle, MapPin, LocateFixed, XCircle
 } from 'lucide-react';
 import { api } from '../services/api';
 import { formatFileSize, formatCost, severityValueClass } from '../utils/format';
@@ -24,6 +24,11 @@ export default function InspectPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const inputRef = useRef();
+
+  // GPS state
+  const [gps, setGps] = useState(null);           // { lat, lon } when captured
+  const [gpsStatus, setGpsStatus] = useState('idle'); // 'idle' | 'loading' | 'captured' | 'error'
+  const [gpsError, setGpsError] = useState(null);
 
   const pickFile = (f) => {
     if (!f || !f.type.startsWith('image/')) {
@@ -58,6 +63,51 @@ export default function InspectPage() {
     setStep(-1);
   };
 
+  // ── GPS capture ──────────────────────────────────────────────────────────
+  const captureLocation = () => {
+    if (!navigator.geolocation) {
+      setGpsStatus('error');
+      setGpsError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setGpsStatus('loading');
+    setGpsError(null);
+    setGps(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = parseFloat(pos.coords.latitude.toFixed(6));
+        const lon = parseFloat(pos.coords.longitude.toFixed(6));
+        setGps({ lat, lon });
+        setGpsStatus('captured');
+      },
+      (err) => {
+        setGpsStatus('error');
+        switch (err.code) {
+          case err.PERMISSION_DENIED:
+            setGpsError('Location permission was denied. Please allow access in your browser settings.');
+            break;
+          case err.POSITION_UNAVAILABLE:
+            setGpsError('Location information is currently unavailable. Try again later.');
+            break;
+          case err.TIMEOUT:
+            setGpsError('Location request timed out. Please try again.');
+            break;
+          default:
+            setGpsError('An unknown error occurred while retrieving your location.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
+
+  const clearLocation = () => {
+    setGps(null);
+    setGpsStatus('idle');
+    setGpsError(null);
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
   const analyze = async () => {
     setError(null);
     setResult(null);
@@ -74,7 +124,10 @@ export default function InspectPage() {
     }, 600);
 
     try {
-      const data = await api.analyzeInspection(file);
+      // Pass GPS if captured; otherwise null,null → no coords sent
+      const lat = gps ? gps.lat : null;
+      const lon = gps ? gps.lon : null;
+      const data = await api.analyzeInspection(file, lat, lon);
       clearInterval(ticker);
       done = true;
       setStep(STEPS.length); // all done
@@ -103,6 +156,105 @@ export default function InspectPage() {
           <p>{error}</p>
         </div>
       )}
+
+      {/* ── GPS Panel ───────────────────────────────────────────────────── */}
+      <div className="gps-panel">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <MapPin size={15} style={{ color: 'var(--brand)' }} />
+          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>GPS Location</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>
+            (optional — inspection can be saved without GPS)
+          </span>
+        </div>
+
+        {gpsStatus === 'idle' && (
+          <button
+            id="gps-capture-btn"
+            className="btn btn-ghost"
+            onClick={captureLocation}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+          >
+            <LocateFixed size={14} />
+            Use My Current Location
+          </button>
+        )}
+
+        {gpsStatus === 'loading' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: 13 }}>
+            <div className="spinner" style={{ width: 14, height: 14 }} />
+            Acquiring location…
+          </div>
+        )}
+
+        {gpsStatus === 'captured' && gps && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)',
+                borderRadius: 'var(--r-md)', padding: '10px 14px',
+              }}
+            >
+              <CheckCircle2 size={15} style={{ color: '#4ade80', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#86efac' }}>Location captured</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Latitude: <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{gps.lat.toFixed(6)}</strong>
+                  &nbsp;&nbsp;Longitude: <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{gps.lon.toFixed(6)}</strong>
+                </div>
+              </div>
+            </div>
+            <button
+              id="gps-clear-btn"
+              className="btn btn-ghost"
+              onClick={clearLocation}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, alignSelf: 'flex-start' }}
+            >
+              <XCircle size={13} />
+              Clear Location
+            </button>
+          </div>
+        )}
+
+        {gpsStatus === 'error' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+                background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+                borderRadius: 'var(--r-md)', padding: '10px 14px',
+              }}
+            >
+              <AlertCircle size={15} style={{ color: '#f87171', flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#f87171' }}>Location unavailable</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{gpsError}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                id="gps-retry-btn"
+                className="btn btn-ghost"
+                onClick={captureLocation}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+              >
+                <LocateFixed size={13} />
+                Retry
+              </button>
+              <button
+                id="gps-skip-btn"
+                className="btn btn-ghost"
+                onClick={clearLocation}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+              >
+                <XCircle size={13} />
+                Continue without GPS
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      {/* ── End GPS Panel ───────────────────────────────────────────────── */}
 
       <div className="inspect-layout">
         {/* LEFT: Upload + Progress */}
@@ -137,7 +289,7 @@ export default function InspectPage() {
                 <div className="image-preview-name">{file.name}</div>
                 <div className="image-preview-size">{formatFileSize(file.size)}</div>
                 <div className="image-preview-actions">
-                  <button className="btn btn-primary" onClick={analyze} disabled={analysisRunning}>
+                  <button className="btn btn-primary" id="analyze-btn" onClick={analyze} disabled={analysisRunning}>
                     <ScanSearch size={14} />
                     {analysisRunning ? 'Analyzing…' : 'Analyze Road'}
                   </button>
@@ -187,7 +339,12 @@ export default function InspectPage() {
             <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--r-md)', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' }}>
               <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
               <p style={{ fontSize: 13, color: '#86efac' }}>
-                Analysis complete — <strong>{result.detection_count ?? result.detections?.length ?? 0}</strong> defect(s) detected. Saved to database as inspection <strong>#{result.inspection_id || result.id}</strong>.
+                Analysis complete — <strong>{result.detection_count ?? result.detections?.length ?? 0}</strong> defect(s) detected. Saved as inspection <strong>#{result.inspection_id || result.id}</strong>.
+                {result.latitude != null && result.longitude != null && (
+                  <span style={{ marginLeft: 8, color: '#6ee7b7' }}>
+                    📍 GPS saved ({Number(result.latitude).toFixed(6)}, {Number(result.longitude).toFixed(6)})
+                  </span>
+                )}
               </p>
             </div>
           )}

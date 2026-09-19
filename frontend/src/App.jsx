@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import InspectPage from './pages/InspectPage';
 import HistoryPage from './pages/HistoryPage';
 import InspectionDetail from './pages/InspectionDetail';
+import RoadMapPage from './pages/RoadMapPage';
 
 export default function App() {
   const [page, setPage] = useState('dashboard');
@@ -20,6 +21,8 @@ export default function App() {
         return <HistoryPage setPage={setPage} setSelectedId={setSelectedId} />;
       case 'detail':
         return <InspectionDetail id={selectedId} setPage={setPage} />;
+      case 'map':
+        return <RoadMapPage setPage={setPage} setSelectedId={setSelectedId} />;
       default:
         return <Dashboard setPage={setPage} setSelectedId={setSelectedId} />;
     }

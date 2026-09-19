@@ -1,4 +1,4 @@
-import { LayoutDashboard, Search, History, Shield, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Search, History, Shield, Menu, X, Map } from 'lucide-react';
 import { useState } from 'react';
 import { useHealth } from '../hooks/useHealth';
 
@@ -6,6 +6,7 @@ const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'inspect', label: 'Inspect Road', icon: Search },
   { key: 'history', label: 'Inspection History', icon: History },
+  { key: 'map', label: 'Road Map', icon: Map },
 ];
 
 export default function Layout({ page, setPage, children }) {
@@ -40,6 +41,7 @@ export default function Layout({ page, setPage, children }) {
           {NAV.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
+              id={`nav-${key}`}
               className={`nav-item ${page === key ? 'active' : ''}`}
               onClick={() => { setPage(key); setOpen(false); }}
             >

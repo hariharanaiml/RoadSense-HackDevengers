@@ -52,6 +52,12 @@ def init_db() -> None:
             if "overall_priority" not in inspection_cols:
                 logger.info("Migrating: Adding 'overall_priority' to 'inspections' table.")
                 conn.exec_driver_sql("ALTER TABLE inspections ADD COLUMN overall_priority VARCHAR(20) DEFAULT 'NONE';")
+            if "latitude" not in inspection_cols:
+                logger.info("Migrating: Adding 'latitude' to 'inspections' table.")
+                conn.exec_driver_sql("ALTER TABLE inspections ADD COLUMN latitude FLOAT;")
+            if "longitude" not in inspection_cols:
+                logger.info("Migrating: Adding 'longitude' to 'inspections' table.")
+                conn.exec_driver_sql("ALTER TABLE inspections ADD COLUMN longitude FLOAT;")
 
             # 2. Inspect and migrate 'detections' table
             res = conn.exec_driver_sql("PRAGMA table_info(detections);")

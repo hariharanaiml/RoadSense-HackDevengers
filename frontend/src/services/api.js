@@ -15,15 +15,26 @@ async function request(path, options = {}) {
 
 export const api = {
   getHealth: () => request('/api/health'),
+
   getInspectionHistory: async (limit = 50) => {
     const data = await request(`/api/inspection/history?limit=${limit}`);
     return Array.isArray(data) ? data : (data.inspections || []);
   },
+
   getInspection: (id) => request(`/api/inspection/${id}`),
-  analyzeInspection: (file) => {
+
+  /**
+   * Analyze an image with optional GPS coordinates.
+   * When latitude and longitude are provided (both non-null), they are sent to the API.
+   * When GPS is absent, only the image is sent — 0,0 or fake coordinates are never used.
+   */
+  analyzeInspection: (file, latitude = null, longitude = null) => {
     const fd = new FormData();
     fd.append('image', file, file.name);
+    if (latitude != null && longitude != null) {
+      fd.append('latitude', String(latitude));
+      fd.append('longitude', String(longitude));
+    }
     return request('/api/inspection/analyze', { method: 'POST', body: fd });
   },
 };
-

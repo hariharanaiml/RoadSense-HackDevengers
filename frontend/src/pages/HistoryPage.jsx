@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  RefreshCw, Eye, Clock, Filter, Search, AlertCircle
+  RefreshCw, Eye, Clock, Filter, Search, AlertCircle, MapPin, MapPinOff
 } from 'lucide-react';
 import { api } from '../services/api';
 import { LoadingState, EmptyState, ErrorState } from '../components/States';
@@ -108,11 +108,12 @@ export default function HistoryPage({ setPage, setSelectedId }) {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Date & Time</th>
+                  <th>Date &amp; Time</th>
                   <th>Detections</th>
                   <th>Max Severity</th>
                   <th>Est. Cost</th>
                   <th>Top Defect</th>
+                  <th>Location</th>
                   <th></th>
                 </tr>
               </thead>
@@ -121,6 +122,7 @@ export default function HistoryPage({ setPage, setSelectedId }) {
                   const maxSev = row.overall_severity || getMaxSeverity(row.detections || []);
                   const count = row.detection_count ?? row.detections?.length ?? 0;
                   const topDefect = getTopDefect(row.detections || []);
+                  const hasGps = row.latitude != null && row.longitude != null;
                   return (
                     <tr key={row.id}>
                       <td className="mono primary" data-label="ID">#{row.id}</td>
@@ -139,6 +141,19 @@ export default function HistoryPage({ setPage, setSelectedId }) {
                       <td data-label="Cost" className="primary">{formatCost(row.total_estimated_cost)}</td>
                       <td data-label="Top Defect" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         {topDefect || (count > 0 ? `${count} defect(s)` : 'None')}
+                      </td>
+                      <td data-label="Location">
+                        {hasGps ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#4ade80' }}>
+                            <MapPin size={11} />
+                            GPS Captured
+                          </span>
+                        ) : (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-muted)' }}>
+                            <MapPinOff size={11} />
+                            No Location
+                          </span>
+                        )}
                       </td>
                       <td data-label="View">
                         <button

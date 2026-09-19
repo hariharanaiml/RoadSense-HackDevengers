@@ -606,3 +606,35 @@ td.mono { font-family: monospace; font-size: 12px; }
 }
 .error-banner svg { color: #f87171; flex-shrink: 0; margin-top: 1px; }
 .error-banner p { font-size: 13.5px; color: #fca5a5; }
+
+/* ======= GPS PANEL ======= */
+.gps-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+
+/* ======= LEAFLET MAP OVERRIDES ======= */
+.leaflet-container {
+  font-family: var(--font);
+  background: #1a1d23;
+}
+.leaflet-control-zoom a {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(15,17,23,0.85) !important;
+  color: var(--text-muted) !important;
+  font-size: 10px !important;
+}
+.leaflet-control-attribution a { color: var(--text-secondary) !important; }
+.leaflet-popup-content-wrapper {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+.leaflet-popup-tip { background: #fff; }

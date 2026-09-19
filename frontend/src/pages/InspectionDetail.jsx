@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, AlertTriangle, Loader2 } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Loader2, MapPin, MapPinOff, ExternalLink } from 'lucide-react';
 import { api } from '../services/api';
 import { ErrorState } from '../components/States';
 import { SeverityBadge } from '../components/Badges';
@@ -34,7 +34,11 @@ export default function InspectionDetail({ id, setPage }) {
   if (error) return <ErrorState message={error} />;
   if (!data) return null;
 
-  const { detections = [], total_estimated_cost, overall_severity, priority, created_at } = data;
+  const { detections = [], total_estimated_cost, overall_severity, overall_priority, created_at, latitude, longitude } = data;
+  const hasGps = latitude != null && longitude != null;
+  const mapsUrl = hasGps
+    ? `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}&zoom=16`
+    : null;
 
   return (
     <>
@@ -62,14 +66,76 @@ export default function InspectionDetail({ id, setPage }) {
         </div>
         <div className="result-metric">
           <div className="label">Priority</div>
-          <div className={`value severity-${(priority || 'none').toLowerCase()}`}>
-            {priority || 'NONE'}
+          <div className={`value severity-${(overall_priority || 'none').toLowerCase()}`}>
+            {overall_priority || 'NONE'}
           </div>
         </div>
         <div className="result-metric">
           <div className="label">Est. Cost</div>
           <div className="value cost">{formatCost(total_estimated_cost)}</div>
         </div>
+      </div>
+
+      {/* GPS location section */}
+      <div
+        style={{
+          marginBottom: 20,
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r-md)',
+          padding: '14px 16px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: hasGps ? 10 : 0 }}>
+          {hasGps
+            ? <MapPin size={15} style={{ color: '#4ade80' }} />
+            : <MapPinOff size={15} style={{ color: 'var(--text-muted)' }} />
+          }
+          <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+            {hasGps ? 'GPS Location' : 'Location'}
+          </span>
+        </div>
+
+        {hasGps ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+              Latitude:{' '}
+              <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                {Number(latitude).toFixed(6)}
+              </strong>
+              &nbsp;&nbsp;Longitude:{' '}
+              <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                {Number(longitude).toFixed(6)}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+              <button
+                id={`detail-view-map-${id}`}
+                className="btn btn-ghost"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                onClick={() => setPage('map')}
+              >
+                <MapPin size={13} />
+                View on Map
+              </button>
+              <a
+                id={`detail-osm-link-${id}`}
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-ghost"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, textDecoration: 'none' }}
+              >
+                <ExternalLink size={13} />
+                Open in OpenStreetMap
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            Not available — this inspection was analyzed without GPS.
+          </div>
+        )}
       </div>
 
       {/* Detections list */}

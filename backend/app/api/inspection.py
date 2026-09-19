@@ -1,7 +1,7 @@
 import io
 import logging
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 from app.db.database import get_db
@@ -18,6 +18,8 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 @router.post("/analyze", summary="Analyze Road Damage with Intelligence and Store Inspection")
 async def analyze_road_damage(
     image: UploadFile = File(...),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -30,6 +32,28 @@ async def analyze_road_damage(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An image file must be uploaded."
+        )
+
+    # 0. Validate geographic coordinates if supplied (Milestone 5)
+    if (latitude is None and longitude is not None) or (latitude is not None and longitude is None):
+        logger.warning("Analyze request rejected: latitude and longitude must be provided together.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Latitude and longitude must be provided together."
+        )
+
+    if latitude is not None and not (-90.0 <= latitude <= 90.0):
+        logger.warning(f"Analyze request rejected: invalid latitude {latitude}.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Latitude must be between -90 and 90 degrees."
+        )
+
+    if longitude is not None and not (-180.0 <= longitude <= 180.0):
+        logger.warning(f"Analyze request rejected: invalid longitude {longitude}.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Longitude must be between -180 and 180 degrees."
         )
 
     # 1. Validate file extension
@@ -124,7 +148,9 @@ async def analyze_road_damage(
             total_estimated_cost=total_estimated_cost,
             overall_severity=overall_severity,
             overall_priority=overall_priority,
-            detections=enriched_detections
+            detections=enriched_detections,
+            latitude=latitude,
+            longitude=longitude
         )
     except Exception as e:
         logger.error(f"Database persistence failure for '{image.filename}': {e}", exc_info=True)
@@ -140,6 +166,8 @@ async def analyze_road_damage(
         "total_estimated_cost": total_estimated_cost,
         "overall_severity": overall_severity,
         "overall_priority": overall_priority,
+        "latitude": inspection.latitude,
+        "longitude": inspection.longitude,
         "detections": enriched_detections
     }
 
@@ -150,7 +178,8 @@ def get_inspection_history(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Returns previously stored inspections sorted newest first, including road intelligence metrics.
+    Returns previously stored inspections sorted newest first, including road intelligence metrics
+    and geographic coordinates.
     """
     inspections = InspectionRepository.get_all(db=db, limit=limit)
     return {
@@ -162,7 +191,9 @@ def get_inspection_history(
                 "detection_count": insp.detection_count,
                 "total_estimated_cost": insp.total_estimated_cost,
                 "overall_severity": insp.overall_severity,
-                "overall_priority": insp.overall_priority
+                "overall_priority": insp.overall_priority,
+                "latitude": insp.latitude,
+                "longitude": insp.longitude
             }
             for insp in inspections
         ]
@@ -175,7 +206,8 @@ def get_inspection(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Retrieves a single inspection record and all its associated detections with Road Intelligence fields.
+    Retrieves a single inspection record and all its associated detections with Road Intelligence fields
+    and geographic coordinates.
     Returns 404 if the inspection ID is not found.
     """
     inspection = InspectionRepository.get_by_id(db=db, inspection_id=inspection_id)
@@ -193,6 +225,8 @@ def get_inspection(
         "total_estimated_cost": inspection.total_estimated_cost,
         "overall_severity": inspection.overall_severity,
         "overall_priority": inspection.overall_priority,
+        "latitude": inspection.latitude,
+        "longitude": inspection.longitude,
         "detections": [
             {
                 "class_id": det.class_id,

@@ -80,7 +80,8 @@ def test_zero_detection_inspection():
     return data
 
 
-def test_history(insp1_id, insp2_id):
+def _check_history(insp1_id, insp2_id):
+    """Verify history endpoint ordering. Called from __main__ with real IDs."""
     print("\n=== 5. Testing GET /api/inspection/history ===")
     res = requests.get(f"{BASE_URL}/api/inspection/history?limit=10")
     print(f"Status Code: {res.status_code}")
@@ -96,7 +97,8 @@ def test_history(insp1_id, insp2_id):
     return data
 
 
-def test_single_inspection(inspection_id, expected_count):
+def _check_single_inspection(inspection_id, expected_count):
+    """Verify a single inspection record by ID. Called from __main__ with real IDs."""
     print(f"\n=== 6. Testing GET /api/inspection/{inspection_id} ===")
     res = requests.get(f"{BASE_URL}/api/inspection/{inspection_id}")
     print(f"Status Code: {res.status_code}")
@@ -140,9 +142,9 @@ if __name__ == "__main__":
     test_health()
     damage_data = test_damage_inspection()
     zero_data = test_zero_detection_inspection()
-    test_history(damage_data["inspection_id"], zero_data["inspection_id"])
-    test_single_inspection(damage_data["inspection_id"], damage_data["detection_count"])
-    test_single_inspection(zero_data["inspection_id"], 0)
+    _check_history(damage_data["inspection_id"], zero_data["inspection_id"])
+    _check_single_inspection(damage_data["inspection_id"], damage_data["detection_count"])
+    _check_single_inspection(zero_data["inspection_id"], 0)
     test_nonexistent_inspection()
     test_invalid_extension()
     test_corrupt_image()

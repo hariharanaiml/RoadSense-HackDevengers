@@ -21,6 +21,10 @@ class Inspection(Base):
     overall_severity = Column(String(20), default="NONE", nullable=False)
     overall_priority = Column(String(20), default="NONE", nullable=False)
 
+    # Geographic location fields (Milestone 5)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+
     detections = relationship(
         "Detection",
         back_populates="inspection",
