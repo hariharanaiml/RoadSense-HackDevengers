@@ -16,9 +16,27 @@ async function request(path, options = {}) {
 export const api = {
   getHealth: () => request('/api/health'),
 
-  getInspectionHistory: async (limit = 50) => {
-    const data = await request(`/api/inspection/history?limit=${limit}`);
-    return Array.isArray(data) ? data : (data.inspections || []);
+  getStats: () => request('/api/inspection/stats'),
+
+  getInspectionHistory: async (params = 50) => {
+    let query;
+    if (typeof params === 'number') {
+      query = `limit=${params}`;
+    } else if (params && typeof params === 'object') {
+      const q = new URLSearchParams();
+      if (params.limit !== undefined) q.append('limit', params.limit);
+      if (params.offset !== undefined) q.append('offset', params.offset);
+      if (params.severity && params.severity !== 'ALL') q.append('severity', params.severity);
+      if (params.has_gps !== undefined && params.has_gps !== null && params.has_gps !== 'all') {
+        q.append('has_gps', params.has_gps);
+      }
+      query = q.toString();
+    }
+    const data = await request(`/api/inspection/history${query ? `?${query}` : ''}`);
+    if (typeof params === 'number') {
+      return Array.isArray(data) ? data : (data.inspections || []);
+    }
+    return data;
   },
 
   getInspection: (id) => request(`/api/inspection/${id}`),

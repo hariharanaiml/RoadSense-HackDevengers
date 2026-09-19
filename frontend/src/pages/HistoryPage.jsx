@@ -1,44 +1,88 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  RefreshCw, Eye, Clock, Filter, Search, AlertCircle, MapPin, MapPinOff
+  RefreshCw, Eye, Clock, Filter, Search, AlertCircle, MapPin, MapPinOff, ChevronDown
 } from 'lucide-react';
 import { api } from '../services/api';
 import { LoadingState, EmptyState, ErrorState } from '../components/States';
 import { SeverityBadge } from '../components/Badges';
 import { formatDate, formatCost } from '../utils/format';
 
+const PAGE_SIZE = 15;
+
 export default function HistoryPage({ setPage, setSelectedId }) {
-  const [history, setHistory] = useState([]);
+  const [inspections, setInspections] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('ALL');
+  const [filterGps, setFilterGps] = useState('ALL');
 
-  const fetchHistory = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  const fetchHistory = useCallback(async (currentOffset = 0, isAppend = false) => {
+    if (isAppend) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
-      const data = await api.getInspectionHistory(50);
-      setHistory(Array.isArray(data) ? data : []);
+      const params = {
+        limit: PAGE_SIZE,
+        offset: currentOffset,
+      };
+      if (filterSeverity !== 'ALL') {
+        params.severity = filterSeverity;
+      }
+      if (filterGps === 'WITH_GPS') {
+        params.has_gps = true;
+      } else if (filterGps === 'WITHOUT_GPS') {
+        params.has_gps = false;
+      }
+
+      const res = await api.getInspectionHistory(params);
+      const items = res.inspections || [];
+      const resTotal = res.total ?? items.length;
+
+      setTotal(resTotal);
+      setOffset(currentOffset);
+      if (isAppend) {
+        setInspections(prev => [...prev, ...items]);
+      } else {
+        setInspections(items);
+      }
     } catch (e) {
       setError(e.message || 'Failed to load history');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [filterSeverity, filterGps]);
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => {
+    fetchHistory(0, false);
+  }, [fetchHistory]);
 
-  const refresh = () => { setRefreshing(true); fetchHistory(true); };
+  const refresh = () => {
+    setRefreshing(true);
+    fetchHistory(0, false);
+  };
 
-  const filtered = history.filter(row => {
-    const maxSev = (row.overall_severity || getMaxSeverity(row.detections || [])).toUpperCase();
-    const sevMatch = filterSeverity === 'ALL' || maxSev === filterSeverity;
-    const searchMatch = !search || String(row.id).includes(search);
-    return sevMatch && searchMatch;
+  const handleLoadMore = () => {
+    const nextOffset = offset + PAGE_SIZE;
+    fetchHistory(nextOffset, true);
+  };
+
+  // Optional client-side search by ID over loaded records
+  const filtered = inspections.filter(row => {
+    if (!search.trim()) return true;
+    return String(row.id).includes(search.trim());
   });
+
+  const hasMore = inspections.length < total;
 
   return (
     <>
@@ -65,6 +109,7 @@ export default function HistoryPage({ setPage, setSelectedId }) {
           />
         </div>
 
+        {/* Severity filter */}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <Filter size={14} style={{ color: 'var(--text-muted)' }} />
           {['ALL', 'HIGH', 'MEDIUM', 'LOW', 'NONE'].map(s => (
@@ -82,18 +127,40 @@ export default function HistoryPage({ setPage, setSelectedId }) {
           ))}
         </div>
 
+        {/* GPS filter */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <MapPin size={14} style={{ color: 'var(--text-muted)' }} />
+          {[
+            { id: 'ALL', label: 'All' },
+            { id: 'WITH_GPS', label: 'With GPS' },
+            { id: 'WITHOUT_GPS', label: 'No GPS' }
+          ].map(g => (
+            <button
+              key={g.id}
+              className={`btn btn-ghost ${filterGps === g.id ? 'active-filter' : ''}`}
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 600,
+                ...(filterGps === g.id ? { background: 'var(--brand-muted)', color: 'var(--brand)', borderColor: 'var(--brand)' } : {})
+              }}
+              onClick={() => setFilterGps(g.id)}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+
         <button className="btn-icon" onClick={refresh} disabled={refreshing} title="Refresh">
           <RefreshCw size={13} style={{ animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }} />
         </button>
 
         <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
-          {filtered.length} / {history.length} records
+          {inspections.length} / {total} records
         </span>
       </div>
 
       {loading ? <LoadingState message="Loading inspection records…" /> :
        error ? <ErrorState message={error} /> :
-       history.length === 0 ? (
+       total === 0 ? (
         <EmptyState title="No inspection records" description="Analyze a road image to create the first inspection record." />
        ) : filtered.length === 0 ? (
         <div className="state-container">
@@ -170,11 +237,36 @@ export default function HistoryPage({ setPage, setSelectedId }) {
               </tbody>
             </table>
           </div>
+
+          {/* Load More Button */}
+          {hasMore && (
+            <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'center', borderTop: '1px solid var(--border)' }}>
+              <button
+                className="btn btn-ghost"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', fontSize: 12, fontWeight: 600 }}
+              >
+                {loadingMore ? (
+                  <>
+                    <RefreshCw size={13} style={{ animation: 'spin 0.7s linear infinite' }} />
+                    Loading more…
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown size={14} />
+                    Load More ({total - inspections.length} remaining)
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
        )}
     </>
   );
 }
+
 
 function getMaxSeverity(detections) {
   const order = ['high', 'medium', 'low'];

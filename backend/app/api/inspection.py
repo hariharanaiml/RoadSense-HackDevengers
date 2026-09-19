@@ -172,17 +172,52 @@ async def analyze_road_damage(
     }
 
 
+ALLOWED_SEVERITIES = {"HIGH", "MEDIUM", "LOW", "NONE", "ALL"}
+
+
+@router.get("/stats", summary="Get Global Inspection Statistics")
+def get_inspection_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Returns aggregate statistics across the entire database, including total inspections,
+    total detections, total estimated cost, severity & priority distributions,
+    defect frequencies, and GPS coverage.
+    """
+    return InspectionRepository.get_stats(db=db)
+
+
 @router.get("/history", summary="Get Inspection History")
 def get_inspection_history(
     limit: int = Query(default=50, ge=1, le=100, description="Maximum inspections to return"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
+    severity: Optional[str] = Query(default=None, description="Filter by overall severity (HIGH, MEDIUM, LOW, NONE, ALL)"),
+    has_gps: Optional[bool] = Query(default=None, description="Filter by presence of GPS coordinates"),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Returns previously stored inspections sorted newest first, including road intelligence metrics
-    and geographic coordinates.
+    Returns previously stored inspections sorted newest first, supporting pagination (limit/offset)
+    and server-side filters (severity, has_gps).
     """
-    inspections = InspectionRepository.get_all(db=db, limit=limit)
+    if severity is not None:
+        sev_clean = severity.strip().upper()
+        if sev_clean not in ALLOWED_SEVERITIES:
+            logger.warning(f"Invalid severity filter '{severity}' requested.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid severity filter '{severity}'. Allowed values: HIGH, MEDIUM, LOW, NONE, ALL."
+            )
+
+    inspections, total = InspectionRepository.get_all_paginated(
+        db=db,
+        limit=limit,
+        offset=offset,
+        severity=severity,
+        has_gps=has_gps
+    )
+
     return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
         "inspections": [
             {
                 "id": insp.id,
@@ -198,6 +233,7 @@ def get_inspection_history(
             for insp in inspections
         ]
     }
+
 
 
 @router.get("/{inspection_id}", summary="Get Inspection by ID")

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Activity, AlertTriangle, CheckCircle2, IndianRupee,
-  RefreshCw, Eye, Clock, Cpu
+  RefreshCw, Eye, Clock, Cpu, MapPin
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useHealth } from '../hooks/useHealth';
@@ -16,53 +16,46 @@ const DEFECT_COLORS = [
 
 export default function Dashboard({ setPage, setSelectedId }) {
   const { health, loading: healthLoading } = useHealth();
-  const [history, setHistory] = useState([]);
-  const [histLoading, setHistLoading] = useState(true);
-  const [histError, setHistError] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [recent, setRecent] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchHistory = useCallback(async (silent = false) => {
-    if (!silent) setHistLoading(true);
-    setHistError(null);
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError(null);
     try {
-      const data = await api.getInspectionHistory(50);
-      setHistory(Array.isArray(data) ? data : []);
+      const [statsData, historyData] = await Promise.all([
+        api.getStats(),
+        api.getInspectionHistory(8)
+      ]);
+      setStats(statsData);
+      setRecent(Array.isArray(historyData) ? historyData : (historyData?.inspections || []));
     } catch (e) {
-      setHistError(e.message || 'Failed to load history');
+      setError(e.message || 'Failed to load dashboard data');
     } finally {
-      setHistLoading(false);
+      setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const refresh = async () => {
     setRefreshing(true);
-    await fetchHistory(true);
+    await loadData(true);
   };
 
-  // Derived stats
-  const totalInspections = history.length;
-  const totalDetections = history.reduce((s, h) => s + (h.detection_count ?? h.detections?.length ?? 0), 0);
-  const totalCost = history.reduce((s, h) => s + (h.total_estimated_cost || 0), 0);
-  const highRisk = history.filter(h =>
-    (h.overall_severity || '').toLowerCase() === 'high' ||
-    h.detections?.some(d => (d.severity || '').toLowerCase() === 'high')
-  ).length;
+  // Backend-powered statistics
+  const totalInspections = stats?.total_inspections ?? 0;
+  const totalDetections = stats?.total_detections ?? 0;
+  const totalCost = stats?.total_estimated_cost ?? 0;
+  const highRisk = stats?.severity_distribution?.HIGH ?? 0;
 
-  // Defect frequency map
-  const defectMap = {};
-  for (const row of history) {
-    for (const d of row.detections || []) {
-      const n = d.class_name || 'unknown';
-      defectMap[n] = (defectMap[n] || 0) + 1;
-    }
-  }
-  const defectEntries = Object.entries(defectMap).sort((a, b) => b[1] - a[1]);
+  // Defect frequency map from backend stats
+  const defectEntries = Object.entries(stats?.defect_frequency || {}).sort((a, b) => b[1] - a[1]);
   const maxCount = defectEntries[0]?.[1] || 1;
-
-  const recent = [...history].slice(0, 8);
 
   return (
     <>
@@ -130,6 +123,17 @@ export default function Dashboard({ setPage, setSelectedId }) {
               </div>
             </div>
           )}
+          {stats?.gps_coverage && (
+            <div className="stat-card" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: '14px 20px', flex: 1, minWidth: 240 }}>
+              <MapPin size={18} style={{ color: '#06b6d4' }} />
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>GPS Coverage</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {stats.gps_coverage.with_gps} Geotagged ({stats.gps_coverage.without_gps} no GPS)
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -152,14 +156,15 @@ export default function Dashboard({ setPage, setSelectedId }) {
             </div>
           </div>
 
-          {histLoading ? <LoadingState message="Loading inspection records…" /> :
-           histError ? <ErrorState message={histError} /> :
-           history.length === 0 ? (
+          {loading ? <LoadingState message="Loading inspection records…" /> :
+           error ? <ErrorState message={error} /> :
+           recent.length === 0 ? (
             <EmptyState
               title="No inspections yet"
               description="Upload a road image to start detecting damage"
             />
            ) : (
+
             <div className="table-wrap table-mobile-cards">
               <table>
                 <thead>
