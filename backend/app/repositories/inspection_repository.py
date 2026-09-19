@@ -175,6 +175,26 @@ class InspectionRepository:
         )
         without_gps = total_inspections - with_gps
 
+        # Calculate high-risk count and aggregate stats
+        all_inspections = db.query(Inspection).options(joinedload(Inspection.detections)).all()
+        risk_scores = []
+        critical_count = 0
+        formatted_list = []
+
+        for insp in all_inspections:
+            f_item = InspectionRepository.format_inspection_dict(insp)
+            formatted_list.append(f_item)
+            r_score = f_item["risk_score"]
+            risk_scores.append(r_score)
+            if r_score >= 81 or f_item["overall_severity"] == "HIGH":
+                critical_count += 1
+
+        avg_risk = round(sum(risk_scores) / len(risk_scores), 1) if risk_scores else 0.0
+
+        # Calculate active hotspots
+        from app.services.hotspot_service import detect_hotspots
+        hotspots = detect_hotspots(formatted_list)
+
         return {
             "total_inspections": total_inspections,
             "total_detections": total_detections,
@@ -185,7 +205,83 @@ class InspectionRepository:
             "gps_coverage": {
                 "with_gps": with_gps,
                 "without_gps": without_gps
-            }
+            },
+            "average_risk_score": avg_risk,
+            "critical_roads_count": critical_count,
+            "active_hotspots_count": len(hotspots)
+        }
+
+    @staticmethod
+    def format_inspection_dict(insp: Inspection) -> Dict[str, Any]:
+        """
+        Converts an Inspection DB model into a rich dictionary including
+        Road Intelligence, Risk Score (0-100), Maintenance Recommendation (P1-P4),
+        and AI Explainability.
+        """
+        from app.services.risk_engine import calculate_risk_score, generate_maintenance_recommendation, generate_explainability
+
+        detections_data = []
+        if insp.detections:
+            for det in insp.detections:
+                detections_data.append({
+                    "class_id": det.class_id,
+                    "class_name": det.class_name,
+                    "confidence": det.confidence,
+                    "bbox": {
+                        "x1": det.x1,
+                        "y1": det.y1,
+                        "x2": det.x2,
+                        "y2": det.y2
+                    },
+                    "severity": det.severity,
+                    "priority": det.priority,
+                    "estimated_cost": det.estimated_cost,
+                    "recommended_action": det.recommended_action
+                })
+
+        risk_info = calculate_risk_score(
+            detections=detections_data,
+            overall_severity=insp.overall_severity,
+            overall_priority=insp.overall_priority
+        )
+
+        has_gps = insp.latitude is not None and insp.longitude is not None
+
+        recommendation = generate_maintenance_recommendation(
+            risk_score=risk_info["risk_score"],
+            overall_severity=insp.overall_severity,
+            detection_count=insp.detection_count,
+            total_cost=insp.total_estimated_cost,
+            has_gps=has_gps
+        )
+
+        explainability = generate_explainability(
+            detections=detections_data,
+            risk_data=risk_info,
+            recommendation=recommendation
+        )
+
+        road_name = f"Inspection #{insp.id}"
+        if has_gps:
+            road_name = f"GPS Site #{insp.id} ({round(insp.latitude, 4)}, {round(insp.longitude, 4)})"
+
+        return {
+            "id": insp.id,
+            "image_filename": insp.image_filename,
+            "created_at": insp.created_at.isoformat() if insp.created_at else None,
+            "detection_count": insp.detection_count,
+            "total_estimated_cost": insp.total_estimated_cost,
+            "overall_severity": insp.overall_severity,
+            "overall_priority": insp.overall_priority,
+            "latitude": insp.latitude,
+            "longitude": insp.longitude,
+            "road_name": road_name,
+            "risk_score": risk_info["risk_score"],
+            "risk_level": risk_info["risk_level"],
+            "risk_factors": risk_info["factors"],
+            "maintenance_recommendation": recommendation,
+            "explainability": explainability,
+            "detections": detections_data
         }
 
     @staticmethod
@@ -199,3 +295,57 @@ class InspectionRepository:
             .filter(Inspection.id == inspection_id)
             .first()
         )
+
+    @staticmethod
+    def get_priority_queue(db: Session, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Returns the top priority inspection items requiring action, ordered by Risk Score & Cost.
+        """
+        inspections = db.query(Inspection).options(joinedload(Inspection.detections)).all()
+        formatted = [InspectionRepository.format_inspection_dict(i) for i in inspections]
+        
+        # Filter items that have defects or risk > 0
+        active_queue = [item for item in formatted if item["detection_count"] > 0 or item["risk_score"] > 0]
+        active_queue.sort(key=lambda x: (x["risk_score"], x["total_estimated_cost"]), reverse=True)
+        return active_queue[:limit]
+
+    @staticmethod
+    def get_previous_inspection(db: Session, current_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Finds the most relevant previous historical inspection before current_id.
+        If current inspection has GPS, attempts to find the closest prior GPS inspection.
+        Otherwise falls back to the immediate preceding inspection by ID.
+        """
+        current = InspectionRepository.get_by_id(db, current_id)
+        if not current:
+            return None
+
+        from app.services.hotspot_service import haversine_distance
+
+        prior_inspections = (
+            db.query(Inspection)
+            .options(joinedload(Inspection.detections))
+            .filter(Inspection.id < current_id)
+            .order_by(Inspection.id.desc())
+            .all()
+        )
+
+        if not prior_inspections:
+            return None
+
+        if current.latitude is not None and current.longitude is not None:
+            # Find nearest prior GPS inspection within 2km
+            best_prior = None
+            min_dist = float("inf")
+            for prior in prior_inspections:
+                if prior.latitude is not None and prior.longitude is not None:
+                    dist = haversine_distance(current.latitude, current.longitude, prior.latitude, prior.longitude)
+                    if dist <= 2.0 and dist < min_dist:
+                        min_dist = dist
+                        best_prior = prior
+            if best_prior:
+                return InspectionRepository.format_inspection_dict(best_prior)
+
+        # Fallback to immediate preceding inspection
+        return InspectionRepository.format_inspection_dict(prior_inspections[0])
+

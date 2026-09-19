@@ -168,17 +168,10 @@ async def analyze_road_damage(
             detail="Failed to persist inspection record to the database."
         )
 
-    return {
-        "success": True,
-        "inspection_id": inspection.id,
-        "detection_count": detection_count,
-        "total_estimated_cost": total_estimated_cost,
-        "overall_severity": overall_severity,
-        "overall_priority": overall_priority,
-        "latitude": inspection.latitude,
-        "longitude": inspection.longitude,
-        "detections": enriched_detections
-    }
+    formatted = InspectionRepository.format_inspection_dict(inspection)
+    formatted["success"] = True
+    formatted["inspection_id"] = inspection.id
+    return formatted
 
 
 ALLOWED_SEVERITIES = {"HIGH", "MEDIUM", "LOW", "NONE", "ALL"}
@@ -189,9 +182,45 @@ def get_inspection_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Returns aggregate statistics across the entire database, including total inspections,
     total detections, total estimated cost, severity & priority distributions,
-    defect frequencies, and GPS coverage.
+    defect frequencies, GPS coverage, average risk score, critical road count, and active hotspots.
     """
     return InspectionRepository.get_stats(db=db)
+
+
+@router.get("/priority-queue", summary="Get Maintenance Priority Queue")
+def get_priority_queue(
+    limit: int = Query(default=10, ge=1, le=50, description="Max priority items to return"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Returns the top inspection items requiring urgent maintenance attention,
+    sorted deterministically by Risk Score and Repair Cost.
+    """
+    queue_items = InspectionRepository.get_priority_queue(db=db, limit=limit)
+    return {
+        "count": len(queue_items),
+        "items": queue_items
+    }
+
+
+@router.get("/hotspots", summary="Get AI Road Defect Hotspot Clusters")
+def get_road_hotspots(
+    radius_km: float = Query(default=0.5, ge=0.1, le=10.0, description="Clustering radius in km"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Performs spatial proximity clustering on GPS-enabled road inspections
+    to identify defect hotspot zones for municipal action.
+    """
+    from app.services.hotspot_service import detect_hotspots
+    inspections, _ = InspectionRepository.get_all_paginated(db=db, limit=500, offset=0)
+    formatted_list = [InspectionRepository.format_inspection_dict(insp) for insp in inspections]
+    hotspots = detect_hotspots(formatted_list, radius_km=radius_km)
+    return {
+        "count": len(hotspots),
+        "radius_km": radius_km,
+        "hotspots": hotspots
+    }
 
 
 @router.get("/history", summary="Get Inspection History")
@@ -204,7 +233,7 @@ def get_inspection_history(
 ) -> Dict[str, Any]:
     """
     Returns previously stored inspections sorted newest first, supporting pagination (limit/offset)
-    and server-side filters (severity, has_gps).
+    and server-side filters (severity, has_gps), enriched with Road Risk Score & Recommendations.
     """
     if severity is not None:
         sev_clean = severity.strip().upper()
@@ -228,21 +257,10 @@ def get_inspection_history(
         "offset": offset,
         "limit": limit,
         "inspections": [
-            {
-                "id": insp.id,
-                "image_filename": insp.image_filename,
-                "created_at": insp.created_at.isoformat() if insp.created_at else None,
-                "detection_count": insp.detection_count,
-                "total_estimated_cost": insp.total_estimated_cost,
-                "overall_severity": insp.overall_severity,
-                "overall_priority": insp.overall_priority,
-                "latitude": insp.latitude,
-                "longitude": insp.longitude
-            }
+            InspectionRepository.format_inspection_dict(insp)
             for insp in inspections
         ]
     }
-
 
 
 @router.get("/{inspection_id}", summary="Get Inspection by ID")
@@ -251,9 +269,8 @@ def get_inspection(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Retrieves a single inspection record and all its associated detections with Road Intelligence fields
-    and geographic coordinates.
-    Returns 404 if the inspection ID is not found.
+    Retrieves a single inspection record and all its associated detections with Road Intelligence fields,
+    geographic coordinates, Risk Score, Maintenance Recommendations, and Explainability.
     """
     inspection = InspectionRepository.get_by_id(db=db, inspection_id=inspection_id)
     if not inspection:
@@ -262,32 +279,64 @@ def get_inspection(
             detail=f"Inspection with ID {inspection_id} not found."
         )
 
+    return InspectionRepository.format_inspection_dict(inspection)
+
+
+@router.get("/{inspection_id}/comparison", summary="Get Before/After Historical Inspection Comparison")
+def get_inspection_comparison(
+    inspection_id: int,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Compares the requested inspection with its previous historical baseline inspection.
+    Calculates condition improvement / deterioration metrics.
+    """
+    current = InspectionRepository.get_by_id(db=db, inspection_id=inspection_id)
+    if not current:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Inspection with ID {inspection_id} not found."
+        )
+
+    current_data = InspectionRepository.format_inspection_dict(current)
+    previous_data = InspectionRepository.get_previous_inspection(db=db, current_id=inspection_id)
+
+    if not previous_data:
+        return {
+            "has_previous": False,
+            "message": "No previous inspection baseline available for comparison.",
+            "current": current_data,
+            "previous": None,
+            "comparison": None
+        }
+
+    # Compute comparative metrics
+    prev_risk = previous_data["risk_score"]
+    curr_risk = current_data["risk_score"]
+    risk_diff = curr_risk - prev_risk
+    
+    prev_defects = previous_data["detection_count"]
+    curr_defects = current_data["detection_count"]
+    defect_diff = curr_defects - prev_defects
+
+    if prev_risk > 0:
+        improvement_pct = round(((prev_risk - curr_risk) / prev_risk) * 100.0, 1)
+    else:
+        improvement_pct = 0.0 if curr_risk == 0 else -100.0
+
+    status_label = "IMPROVED" if risk_diff < 0 else ("DETERIORATED" if risk_diff > 0 else "UNCHANGED")
+
     return {
-        "id": inspection.id,
-        "image_filename": inspection.image_filename,
-        "created_at": inspection.created_at.isoformat() if inspection.created_at else None,
-        "detection_count": inspection.detection_count,
-        "total_estimated_cost": inspection.total_estimated_cost,
-        "overall_severity": inspection.overall_severity,
-        "overall_priority": inspection.overall_priority,
-        "latitude": inspection.latitude,
-        "longitude": inspection.longitude,
-        "detections": [
-            {
-                "class_id": det.class_id,
-                "class_name": det.class_name,
-                "confidence": det.confidence,
-                "bbox": {
-                    "x1": det.x1,
-                    "y1": det.y1,
-                    "x2": det.x2,
-                    "y2": det.y2
-                },
-                "severity": det.severity,
-                "priority": det.priority,
-                "estimated_cost": det.estimated_cost,
-                "recommended_action": det.recommended_action
-            }
-            for det in inspection.detections
-        ]
+        "has_previous": True,
+        "message": f"Historical comparison against Inspection #{previous_data['id']}.",
+        "current": current_data,
+        "previous": previous_data,
+        "comparison": {
+            "status": status_label,
+            "improvement_percentage": improvement_pct,
+            "risk_score_change": risk_diff,
+            "defect_count_change": defect_diff,
+            "cost_change": round(current_data["total_estimated_cost"] - previous_data["total_estimated_cost"], 2)
+        }
     }
+

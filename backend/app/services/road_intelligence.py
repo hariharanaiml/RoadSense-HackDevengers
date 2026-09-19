@@ -120,10 +120,39 @@ def apply_road_intelligence(detections: List[Dict[str, Any]]) -> Tuple[List[Dict
     overall_severity = calculate_overall_severity(severities)
     overall_priority = calculate_overall_priority(priorities)
 
+    # Calculate Risk Score & Recommendations
+    from app.services.risk_engine import calculate_risk_score, generate_maintenance_recommendation, generate_explainability
+    
+    risk_info = calculate_risk_score(
+        detections=enriched_detections,
+        overall_severity=overall_severity,
+        overall_priority=overall_priority
+    )
+
+    recommendation = generate_maintenance_recommendation(
+        risk_score=risk_info["risk_score"],
+        overall_severity=overall_severity,
+        detection_count=len(enriched_detections),
+        total_cost=total_cost,
+        has_gps=False
+    )
+
+    explainability = generate_explainability(
+        detections=enriched_detections,
+        risk_data=risk_info,
+        recommendation=recommendation
+    )
+
     summary = {
         "total_estimated_cost": round(total_cost, 2),
         "overall_severity": overall_severity,
-        "overall_priority": overall_priority
+        "overall_priority": overall_priority,
+        "risk_score": risk_info["risk_score"],
+        "risk_level": risk_info["risk_level"],
+        "risk_factors": risk_info["factors"],
+        "maintenance_recommendation": recommendation,
+        "explainability": explainability
     }
 
     return enriched_detections, summary
+

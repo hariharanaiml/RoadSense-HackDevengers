@@ -18,6 +18,12 @@ export const api = {
 
   getStats: () => request('/api/inspection/stats'),
 
+  getPriorityQueue: (limit = 10) => request(`/api/inspection/priority-queue?limit=${limit}`),
+
+  getHotspots: (radiusKm = 0.5) => request(`/api/inspection/hotspots?radius_km=${radiusKm}`),
+
+  getComparison: (id) => request(`/api/inspection/${id}/comparison`),
+
   getInspectionHistory: async (params = 50) => {
     let query;
     if (typeof params === 'number') {
