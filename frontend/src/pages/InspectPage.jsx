@@ -187,7 +187,7 @@ export default function InspectPage() {
             <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--r-md)', padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' }}>
               <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
               <p style={{ fontSize: 13, color: '#86efac' }}>
-                Analysis complete — <strong>{result.detections?.length || 0}</strong> defect(s) detected. Saved to database as inspection <strong>#{result.id}</strong>.
+                Analysis complete — <strong>{result.detection_count ?? result.detections?.length ?? 0}</strong> defect(s) detected. Saved to database as inspection <strong>#{result.inspection_id || result.id}</strong>.
               </p>
             </div>
           )}
@@ -212,9 +212,9 @@ export default function InspectPage() {
             <>
               {/* Summary metrics */}
               <div className="result-summary">
-                <ResultMetric label="Defects" value={result.detections?.length || 0} cls="count" />
+                <ResultMetric label="Defects" value={result.detection_count ?? result.detections?.length ?? 0} cls="count" />
                 <ResultMetric label="Severity" value={result.overall_severity || 'NONE'} cls={severityValueClass(result.overall_severity)} />
-                <ResultMetric label="Priority" value={result.priority || 'NONE'} cls={severityValueClass(result.priority)} />
+                <ResultMetric label="Priority" value={result.overall_priority || result.priority || 'NONE'} cls={severityValueClass(result.overall_priority || result.priority)} />
                 <ResultMetric label="Est. Cost" value={formatCost(result.total_estimated_cost)} cls="cost" />
               </div>
 

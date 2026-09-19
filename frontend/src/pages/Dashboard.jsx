@@ -44,9 +44,10 @@ export default function Dashboard({ setPage, setSelectedId }) {
 
   // Derived stats
   const totalInspections = history.length;
-  const totalDetections = history.reduce((s, h) => s + (h.detections?.length || 0), 0);
+  const totalDetections = history.reduce((s, h) => s + (h.detection_count ?? h.detections?.length ?? 0), 0);
   const totalCost = history.reduce((s, h) => s + (h.total_estimated_cost || 0), 0);
   const highRisk = history.filter(h =>
+    (h.overall_severity || '').toLowerCase() === 'high' ||
     h.detections?.some(d => (d.severity || '').toLowerCase() === 'high')
   ).length;
 
@@ -173,7 +174,8 @@ export default function Dashboard({ setPage, setSelectedId }) {
                 </thead>
                 <tbody>
                   {recent.map(row => {
-                    const maxSev = getMaxSeverity(row.detections || []);
+                    const maxSev = row.overall_severity || getMaxSeverity(row.detections || []);
+                    const count = row.detection_count ?? row.detections?.length ?? 0;
                     return (
                       <tr key={row.id}>
                         <td className="mono primary" data-label="ID">#{row.id}</td>
@@ -185,7 +187,7 @@ export default function Dashboard({ setPage, setSelectedId }) {
                         </td>
                         <td data-label="Detections">
                           <span style={{ fontWeight: 600, color: 'var(--brand)' }}>
-                            {row.detections?.length || 0}
+                            {count}
                           </span>
                         </td>
                         <td data-label="Severity"><SeverityBadge value={maxSev} /></td>

@@ -15,7 +15,10 @@ async function request(path, options = {}) {
 
 export const api = {
   getHealth: () => request('/api/health'),
-  getInspectionHistory: (limit = 50) => request(`/api/inspection/history?limit=${limit}`),
+  getInspectionHistory: async (limit = 50) => {
+    const data = await request(`/api/inspection/history?limit=${limit}`);
+    return Array.isArray(data) ? data : (data.inspections || []);
+  },
   getInspection: (id) => request(`/api/inspection/${id}`),
   analyzeInspection: (file) => {
     const fd = new FormData();

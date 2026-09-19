@@ -34,7 +34,7 @@ export default function HistoryPage({ setPage, setSelectedId }) {
   const refresh = () => { setRefreshing(true); fetchHistory(true); };
 
   const filtered = history.filter(row => {
-    const maxSev = getMaxSeverity(row.detections || []);
+    const maxSev = (row.overall_severity || getMaxSeverity(row.detections || [])).toUpperCase();
     const sevMatch = filterSeverity === 'ALL' || maxSev === filterSeverity;
     const searchMatch = !search || String(row.id).includes(search);
     return sevMatch && searchMatch;
@@ -118,7 +118,8 @@ export default function HistoryPage({ setPage, setSelectedId }) {
               </thead>
               <tbody>
                 {filtered.map(row => {
-                  const maxSev = getMaxSeverity(row.detections || []);
+                  const maxSev = row.overall_severity || getMaxSeverity(row.detections || []);
+                  const count = row.detection_count ?? row.detections?.length ?? 0;
                   const topDefect = getTopDefect(row.detections || []);
                   return (
                     <tr key={row.id}>
@@ -131,13 +132,13 @@ export default function HistoryPage({ setPage, setSelectedId }) {
                       </td>
                       <td data-label="Detections">
                         <span style={{ fontWeight: 700, color: 'var(--brand)' }}>
-                          {row.detections?.length || 0}
+                          {count}
                         </span>
                       </td>
                       <td data-label="Severity"><SeverityBadge value={maxSev} /></td>
                       <td data-label="Cost" className="primary">{formatCost(row.total_estimated_cost)}</td>
                       <td data-label="Top Defect" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {topDefect || '—'}
+                        {topDefect || (count > 0 ? `${count} defect(s)` : 'None')}
                       </td>
                       <td data-label="View">
                         <button
