@@ -12,7 +12,8 @@ from app.services.yolo_service import yolo_service
 logger = logging.getLogger("inspection_api")
 router = APIRouter(prefix="/api/inspection", tags=["Inspection"])
 
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB limit
 
 
 @router.post("/analyze", summary="Analyze Road Damage with Intelligence and Store Inspection")
@@ -63,7 +64,7 @@ async def analyze_road_damage(
         logger.warning(f"Analyze request rejected: unsupported extension in filename '{image.filename}'.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported file extension. Allowed formats: JPEG, JPG, PNG."
+            detail="Unsupported file extension. Allowed formats: JPEG, JPG, PNG, WEBP, BMP."
         )
 
     # 2. Read file contents into memory
@@ -83,6 +84,13 @@ async def analyze_road_damage(
             detail="The uploaded image file is empty."
         )
 
+    if len(content) > MAX_IMAGE_SIZE_BYTES:
+        logger.warning(f"Analyze request rejected: file size ({len(content)} bytes) exceeds limit.")
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="The uploaded image exceeds the 20MB size limit."
+        )
+
     # 3. Validate actual image format and integrity using Pillow
     try:
         pil_image = Image.open(io.BytesIO(content))
@@ -90,11 +98,11 @@ async def analyze_road_damage(
         pil_image = Image.open(io.BytesIO(content))
 
         format_name = pil_image.format
-        if format_name not in ("JPEG", "PNG"):
-            logger.warning(f"Analyze request rejected: Pillow detected format '{format_name}' not in [JPEG, PNG].")
+        if format_name not in ("JPEG", "PNG", "WEBP", "BMP"):
+            logger.warning(f"Analyze request rejected: Pillow detected format '{format_name}' not in allowed list.")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported image format: '{format_name}'. Only JPEG, JPG, and PNG are supported."
+                detail=f"Unsupported image format: '{format_name}'. Only JPEG, JPG, PNG, WEBP, and BMP are supported."
             )
 
         pil_image = pil_image.convert("RGB")
@@ -104,6 +112,7 @@ async def analyze_road_damage(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The uploaded file is not a valid image or is corrupt."
         )
+
     except HTTPException:
         raise
     except Exception as e:

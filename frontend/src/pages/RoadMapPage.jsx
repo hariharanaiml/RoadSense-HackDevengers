@@ -50,7 +50,7 @@ export default function RoadMapPage({ setPage, setSelectedId }) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const data = await api.getInspectionHistory(50);
+      const data = await api.getInspectionHistory({ limit: 100, has_gps: true });
       const inspections = Array.isArray(data) ? data : (data?.inspections || []);
       // Only keep inspections with real GPS coordinates
       const geotagged = inspections.filter(

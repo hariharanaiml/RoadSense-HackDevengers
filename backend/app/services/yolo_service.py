@@ -25,7 +25,7 @@ except ValueError:
     logger.warning("Invalid YOLO_CONFIDENCE_THRESHOLD in environment. Defaulting to 0.25")
     DEFAULT_CONFIDENCE_THRESHOLD = 0.25
 
-MODEL_PATH = backend_dir / "models" / "best.pt"
+MODEL_PATH = Path(os.getenv("YOLO_MODEL_PATH", str(backend_dir / "models" / "best.pt")))
 
 
 class YOLOService:

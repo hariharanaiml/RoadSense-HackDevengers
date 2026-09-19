@@ -24,6 +24,18 @@ export default function InspectionDetail({ id, setPage }) {
     return () => { cancelled = true; };
   }, [id]);
 
+  if (!id) {
+    return (
+      <div className="state-container">
+        <p className="state-title">No inspection selected</p>
+        <p className="state-desc">Select an inspection from the history page to view details.</p>
+        <button className="btn btn-primary" onClick={() => setPage('history')} style={{ marginTop: 12 }}>
+          <ArrowLeft size={14} style={{ marginRight: 6 }} /> Go to History
+        </button>
+      </div>
+    );
+  }
+
   if (loading) return (
     <div className="state-container">
       <Loader2 size={32} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--brand)' }} />
@@ -31,8 +43,19 @@ export default function InspectionDetail({ id, setPage }) {
     </div>
   );
 
-  if (error) return <ErrorState message={error} />;
+  if (error) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <button className="btn btn-ghost" onClick={() => setPage('history')} style={{ alignSelf: 'flex-start' }}>
+          <ArrowLeft size={14} /> Back to History
+        </button>
+        <ErrorState message={error} />
+      </div>
+    );
+  }
+
   if (!data) return null;
+
 
   const { detections = [], total_estimated_cost, overall_severity, overall_priority, created_at, latitude, longitude } = data;
   const hasGps = latitude != null && longitude != null;

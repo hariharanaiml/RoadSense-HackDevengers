@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 from fastapi import FastAPI
@@ -45,13 +46,17 @@ app = FastAPI(
 )
 
 # CORS configuration
+cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
+cors_origins = [orig.strip() for orig in cors_origins_raw.split(",") if orig.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins if "*" not in cors_origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Mount Routers
 app.include_router(inspection_router)
@@ -74,10 +79,18 @@ def health_check() -> Dict[str, Any]:
     }
 
 
-@app.get("/", summary="Root Endpoint")
-def root_endpoint() -> Dict[str, str]:
-    return {
-        "message": "RoadSense AI HackDevengers Backend is running.",
-        "docs": "/docs",
-        "health": "/api/health"
-    }
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists() and (frontend_dist / "index.html").exists():
+    logger.info(f"Mounting production frontend build from: {frontend_dist}")
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+else:
+    @app.get("/", summary="Root Endpoint")
+    def root_endpoint() -> Dict[str, str]:
+        return {
+            "message": "RoadSense AI HackDevengers Backend is running.",
+            "docs": "/docs",
+            "health": "/api/health"
+        }

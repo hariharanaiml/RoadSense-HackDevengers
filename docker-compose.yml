@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  roadsense-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: roadsense_app
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - YOLO_CONFIDENCE_THRESHOLD=0.25
+      - CORS_ORIGINS=*
+    restart: unless-stopped

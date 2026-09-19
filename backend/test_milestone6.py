@@ -1,8 +1,10 @@
 import json
+import os
 import requests
 from pathlib import Path
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("TEST_BASE_URL", "http://127.0.0.1:8000")
+
 
 
 def _check_stats(initial_stats=None):
@@ -108,10 +110,13 @@ def test_milestone6():
     print(f"PASSED: Stats endpoint returned {initial_stats['total_inspections']} inspections, "
           f"{initial_stats['total_detections']} detections, cost={initial_stats['total_estimated_cost']}")
 
-    img_damage = Path(r"C:\Users\ADMIN\Desktop\project 1\backend\uploads\093d4ebd35b1453f86e66932c8651f83.jpg")
-    img_clean = Path(r"C:\Users\ADMIN\Desktop\project 1\backend\uploads\test_pothole_road.jpg")
+    candidate_damage = Path(__file__).resolve().parent.parent.parent / "backend" / "uploads" / "093d4ebd35b1453f86e66932c8651f83.jpg"
+    candidate_clean = Path(__file__).resolve().parent.parent.parent / "backend" / "uploads" / "test_pothole_road.jpg"
+    img_damage = candidate_damage if candidate_damage.exists() else Path(r"C:\Users\ADMIN\Desktop\project 1\backend\uploads\093d4ebd35b1453f86e66932c8651f83.jpg")
+    img_clean = candidate_clean if candidate_clean.exists() else Path(r"C:\Users\ADMIN\Desktop\project 1\backend\uploads\test_pothole_road.jpg")
     assert img_damage.exists(), "Test damage image missing"
     assert img_clean.exists(), "Test clean image missing"
+
 
     print("\n=== 3. Add Geotagged Inspection ===")
     with open(img_damage, "rb") as f:
